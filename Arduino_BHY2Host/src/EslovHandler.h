@@ -49,7 +49,6 @@ public:
   uint8_t requestPacketAck();
   uint8_t requestAvailableData() ;
   bool requestSensorData(SensorDataPacket &sData);
-  void toggleEslovIntPin();
 
 protected:
   void niclaAsShield();
