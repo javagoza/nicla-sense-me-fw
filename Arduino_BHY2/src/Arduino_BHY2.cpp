@@ -54,22 +54,24 @@ bool Arduino_BHY2::begin(NiclaConfig config, NiclaWiring niclaConnection)
   if (!sensortec.begin()) {
     return false;
   }
-  if (_niclaConfig & NICLA_BLE) {
-    //Start BLE Handler
-    if (!bleHandler.begin()) {
+  if (!(_niclaConfig & NICLA_STANDALONE)) {
+    if (_niclaConfig & NICLA_BLE) {
+      //Start BLE Handler
+      if (!bleHandler.begin()) {
+        return false;
+      }
+    }
+    if (_niclaConfig & NICLA_I2C) {
+      //Start Eslov Handler
+      pinMode(_eslovIntPin, OUTPUT);
+      if (!eslovHandler.begin()) {
+        return false;
+      }
+    }
+    //Start DFU Manager
+    if (!dfuManager.begin()) {
       return false;
     }
-  }
-  if (_niclaConfig & NICLA_I2C) {
-    //Start Eslov Handler
-    pinMode(_eslovIntPin, OUTPUT);
-    if (!eslovHandler.begin()) {
-      return false;
-    }
-  }
-  //Start DFU Manager
-  if (!dfuManager.begin()) {
-    return false;
   }
 
   if (_debug) {
@@ -83,7 +85,9 @@ bool Arduino_BHY2::begin(NiclaConfig config, NiclaWiring niclaConnection)
 bool Arduino_BHY2::begin(NiclaSettings& settings)
 {
   uint8_t niclaSettings = settings.getConfiguration();
-  if ((niclaSettings & NICLA_I2C) && (niclaSettings & NICLA_BLE)) {
+  if (niclaSettings & NICLA_STANDALONE) {
+     _niclaConfig = NICLA_STANDALONE;
+  } else if ((niclaSettings & NICLA_I2C) && (niclaSettings & NICLA_BLE)) {
     _niclaConfig = NICLA_BLE_AND_I2C;
   }
   else if (niclaSettings & NICLA_I2C) {
@@ -104,34 +108,39 @@ void Arduino_BHY2::update()
   pingI2C();
 
   sensortec.update();
-  if (_niclaConfig & NICLA_BLE) {
-    bleHandler.update();
-  }
 
-  // While updating fw, detach the library from the sketch
-  if (dfuManager.isPending()) {
-    if (_debug) _debug->println("Start DFU procedure. Sketch execution is stopped.");
-    while (dfuManager.isPending()) {
-      if (_niclaConfig & NICLA_BLE) {
-        if (dfuManager.dfuSource() == bleDFU && bleHandler.bleActive) {
-          bleHandler.update();
-        }
-      }
-      pingI2C();
-    }
-    // Wait some time for acknowledgment retrieval
+  if (!(_niclaConfig & NICLA_STANDALONE)) {
+
     if (_niclaConfig & NICLA_BLE) {
-      if (dfuManager.dfuSource() == bleDFU) {
-        auto timeRef = millis();
-        while (millis() - timeRef < 1000) {
-          bleHandler.update();
-        }
-      }
+      bleHandler.update();
     }
 
-    // Reboot after fw update
-    if (_debug) _debug->println("DFU procedure terminated. Rebooting.");
-    NVIC_SystemReset();
+    // While updating fw, detach the library from the sketch
+    if (dfuManager.isPending()) {
+      if (_debug) _debug->println("Start DFU procedure. Sketch execution is stopped.");
+      while (dfuManager.isPending()) {
+        if (_niclaConfig & NICLA_BLE) {
+          if (dfuManager.dfuSource() == bleDFU && bleHandler.bleActive) {
+            bleHandler.update();
+          }
+        }
+        pingI2C();
+      }
+      // Wait some time for acknowledgment retrieval
+      if (_niclaConfig & NICLA_BLE) {
+        if (dfuManager.dfuSource() == bleDFU) {
+          auto timeRef = millis();
+          while (millis() - timeRef < 1000) {
+            bleHandler.update();
+          }
+        }
+      }
+
+      // Reboot after fw update
+      if (_debug) _debug->println("DFU procedure terminated. Rebooting.");
+      NVIC_SystemReset();
+    }
+
   }
 }
 
